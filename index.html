@@ -220,7 +220,7 @@
       <div class="brand-icon">VHF // PA</div>
       <div>
         <h1>Flight Deck & ATC Script Generator</h1>
-        <div class="subtitle">Simulatore fraseologia con Readback Rigoroso e Mappa della Tratta</div>
+        <div class="subtitle">Simulatore fraseologia con Readback Rigoroso e Mappa Dinamica</div>
       </div>
     </div>
   </header>
@@ -265,12 +265,12 @@
       </div>
 
       <div class="form-group">
-        <label for="origin">Aeroporto Partenza (ICAO - Città)</label>
+        <label for="origin">Aeroporto Partenza (es. LIRQ o Firenze)</label>
         <input type="text" id="origin" value="LIRQ - Firenze Peretola" />
       </div>
 
       <div class="form-group">
-        <label for="destination">Aeroporto Arrivo (ICAO - Città)</label>
+        <label for="destination">Aeroporto Arrivo (es. LIRF o Roma)</label>
         <input type="text" id="destination" value="LIRF - Roma Fiumicino" />
       </div>
 
@@ -322,29 +322,30 @@
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>
-  const airportDB = {
-    "LIRQ": { city: "Firenze Peretola", lat: 43.8099, lon: 11.2051, tower: "Firenze Tower", ground: "Firenze Delivery", runways: ["05", "23"], region: "EU" },
-    "LIRF": { city: "Roma Fiumicino", lat: 41.8003, lon: 12.2389, tower: "Roma Tower", ground: "Roma Ground", runways: ["16R", "25", "16L"], region: "EU" },
-    "LIMC": { city: "Milano Malpensa", lat: 45.6306, lon: 8.7281, tower: "Malpensa Tower", ground: "Malpensa Ground", runways: ["35R", "35L"], region: "EU" },
-    "LIML": { city: "Milano Linate", lat: 45.4451, lon: 9.2767, tower: "Linate Tower", ground: "Linate Ground", runways: ["36", "18"], region: "EU" },
-    "LIPZ": { city: "Venezia Marco Polo", lat: 45.5053, lon: 12.3519, tower: "Venezia Tower", ground: "Venezia Ground", runways: ["04R", "22L"], region: "EU" },
-    "KMIA": { city: "Miami", lat: 25.7959, lon: -80.2870, tower: "Miami Tower", ground: "Miami Ground", runways: ["09", "08R"], region: "US" },
-    "KJFK": { city: "New York JFK", lat: 40.6413, lon: -73.7781, tower: "Kennedy Tower", ground: "Kennedy Ground", runways: ["31L", "22L"], region: "US" },
-    "EGLL": { city: "London Heathrow", lat: 51.4700, lon: -0.4543, tower: "Heathrow Tower", ground: "Heathrow Ground", runways: ["27L", "27R"], region: "EU" },
-    "LFPG": { city: "Paris CDG", lat: 49.0097, lon: 2.5479, tower: "De Gaulle Tower", ground: "De Gaulle Ground", runways: ["26R", "27L"], region: "EU" },
-    "OMDB": { city: "Dubai", lat: 25.2532, lon: 55.3657, tower: "Dubai Tower", ground: "Dubai Ground", runways: ["30R", "12L"], region: "EU" }
-  };
-
   let currentVariantSeed = 0;
   let mapInstance = null;
 
-  function parseAirportInput(rawInput) {
-    const clean = rawInput.trim();
-    const match = clean.match(/^([A-Z]{4})\s*-\s*(.+)$/i);
-    let code = match ? match[1].toUpperCase() : (clean.length === 4 ? clean.toUpperCase() : "ZZZZ");
-    let name = match ? match[2].trim() : clean;
-    if (airportDB[code]) return { code, ...airportDB[code] };
-    return { code, city: name, lat: 43.0, lon: 12.0, tower: `${name} Tower`, ground: `${name} Delivery`, runways: ["09", "27"], region: "EU" };
+  // Funzione asincrona che interroga Nominatim (OpenStreetMap) per trovare coordinate reali di qualsiasi città/aeroporto inserito
+  async function getCoords(query) {
+    // Pulisce la stringa rimuovendo codici ICAO iniziali se presenti (es. "LIRQ - Firenze" diventa "Firenze")
+    const cleanQuery = query.replace(/^[A-Z]{4}\s*-\s*/, "").trim();
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanQuery + " airport")}&limit=1`);
+      const data = await response.json();
+      if (data && data.length > 0) {
+        return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), name: cleanQuery };
+      }
+      // Secondo tentativo senza la parola "airport" se non trova nulla
+      const response2 = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanQuery)}&limit=1`);
+      const data2 = await response2.json();
+      if (data2 && data2.length > 0) {
+        return { lat: parseFloat(data2[0].lat), lon: parseFloat(data2[0].lon), name: cleanQuery };
+      }
+    } catch (e) {
+      console.error("Geocoding error:", e);
+    }
+    // Coordinate di fallback (Roma) se la rete o il servizio falliscono
+    return { lat: 41.8, lon: 12.2, name: cleanQuery };
   }
 
   function addMinutes(timeStr, mins) {
@@ -353,8 +354,8 @@
     return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
   }
 
-  function formatQNH(region) {
-    return region === "US" ? { en: `altimeter 29.92`, it: `altimetro 29.92 inHg` } : { en: `QNH 1013`, it: `QNH 1013 hPa` };
+  function formatQNH(code) {
+    return code.startsWith("K") ? { en: `altimeter 29.92`, it: `altimetro 29.92 inHg` } : { en: `QNH 1013`, it: `QNH 1013 hPa` };
   }
 
   function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -368,14 +369,14 @@
     return Math.round(R * c);
   }
 
-  function updateMap(dep, arr) {
-    const depLatLng = [dep.lat, dep.lon];
-    const arrLatLng = [arr.lat, arr.lon];
+  function updateMap(depLoc, arrLoc) {
+    const depLatLng = [depLoc.lat, depLoc.lon];
+    const arrLatLng = [arrLoc.lat, arrLoc.lon];
 
     if (!mapInstance) {
       mapInstance = L.map('mapContainer', { zoomControl: true }).setView(depLatLng, 6);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        attribution: '&copy; OpenStreetMap contributors',
         maxZoom: 19
       }).addTo(mapInstance);
     } else {
@@ -384,8 +385,8 @@
       });
     }
 
-    L.marker(depLatLng).addTo(mapInstance).bindPopup(`<b>Partenza:</b> ${dep.code} - ${dep.city}`);
-    L.marker(arrLatLng).addTo(mapInstance).bindPopup(`<b>Arrivo:</b> ${arr.code} - ${arr.city}`);
+    L.marker(depLatLng).addTo(mapInstance).bindPopup(`<b>Partenza:</b> ${depLoc.name}`);
+    L.marker(arrLatLng).addTo(mapInstance).bindPopup(`<b>Arrivo:</b> ${arrLoc.name}`);
 
     const routeLine = L.polyline([depLatLng, arrLatLng], {
       color: '#0284c7',
@@ -397,7 +398,7 @@
     mapInstance.fitBounds(routeLine.getBounds(), { padding: [60, 60] });
   }
 
-  function generateScript(randomize = false) {
+  async function generateScript(randomize = false) {
     if (randomize) currentVariantSeed++;
 
     const airlineVal = document.getElementById("airline").value.split("|");
@@ -408,26 +409,37 @@
     const captainName = document.getElementById("captainName").value.trim() || "Andrea Gabbanini";
     const radioCallsign = `${radioCallsignMap[icaoAirline] || airlineName} ${flightNum}`;
 
-    const dep = parseAirportInput(document.getElementById("origin").value);
-    const arr = parseAirportInput(document.getElementById("destination").value);
+    const originInput = document.getElementById("origin").value;
+    const destInput = document.getElementById("destination").value;
+
+    // Estrae eventuali codici ICAO scritti all'inizio (es. LIRQ)
+    const depCodeMatch = originInput.match(/^([A-Z]{4})/);
+    const arrCodeMatch = destInput.match(/^([A-Z]{4})/);
+    const depCode = depCodeMatch ? depCodeMatch[1] : "DEP";
+    const arrCode = arrCodeMatch ? arrCodeMatch[1] : "ARR";
+
+    // Ricerca asincrona delle coordinate basata su ciò che l'utente ha scritto nei campi
+    const depLoc = await getCoords(originInput);
+    const arrLoc = await getCoords(destInput);
+
     const depTime = document.getElementById("depTime").value || "11:30";
     const arrTime = document.getElementById("arrTime").value || "12:20";
 
-    const depRwy = dep.runways[currentVariantSeed % dep.runways.length];
-    const arrRwy = arr.runways[(currentVariantSeed + 1) % arr.runways.length];
+    const depRwy = currentVariantSeed % 2 === 0 ? "05" : "23";
+    const arrRwy = currentVariantSeed % 2 === 0 ? "16R" : "25";
     const squawk = 4210 + (currentVariantSeed * 17) % 3500;
-    const qnh = formatQNH(dep.region);
-    const distanceNM = calculateDistance(dep.lat, dep.lon, arr.lat, arr.lon);
+    const qnh = formatQNH(depCode);
+    const distanceNM = calculateDistance(depLoc.lat, depLoc.lon, arrLoc.lat, arrLoc.lon);
 
-    const isFlorence = dep.code === "LIRQ";
-    const sidName = isFlorence ? "KUGIX 5A" : `${dep.code} 1D`;
+    const isFlorence = depCode === "LIRQ" || originInput.toLowerCase().includes("firenze");
+    const sidName = isFlorence ? "KUGIX 5A" : `${depCode} 1D`;
 
-    updateMap(dep, arr);
+    updateMap(depLoc, arrLoc);
 
     document.getElementById("flightStrip").innerHTML = `
       <div class="strip-item"><span>COMANDANTE</span><strong>Capt. ${captainName}</strong></div>
       <div class="strip-item"><span>VOLO</span><strong>${iataAirline}${flightNum} (${radioCallsign})</strong></div>
-      <div class="strip-item"><span>TRATTA</span><strong>${dep.code} ➔ ${arr.code} (${distanceNM} NM)</strong></div>
+      <div class="strip-item"><span>TRATTA</span><strong>${depCode} ➔ ${arrCode} (${distanceNM} NM)</strong></div>
       <div class="strip-item"><span>SID / PISTA</span><strong>${sidName} (RWY ${depRwy})</strong></div>
       <div class="strip-item"><span>SQUAWK</span><strong>${squawk}</strong></div>
     `;
@@ -439,8 +451,8 @@
         comms: [
           {
             category: "PA", badge: `CAPTAIN ${captainName.toUpperCase()} ➔ PASSEGGERI (PA)`, channel: "CABIN PA",
-            en: `"Ladies and gentlemen, this is your captain, ${captainName}, speaking. Welcome aboard ${airlineName} flight ${iataAirline}${flightNum} to ${arr.city}. We are completing our final checks, arrival scheduled at ${arrTime}. Sit back and enjoy the flight."`,
-            it: `"Signore e signori, vi parla il comandante ${captainName}. Benvenuti a bordo del volo ${airlineName} ${iataAirline}${flightNum} diretto a ${arr.city}. Completiamo i controlli finali, arrivo previsto alle ${arrTime}. Buon volo."`
+            en: `"Ladies and gentlemen, this is your captain, ${captainName}, speaking. Welcome aboard ${airlineName} flight ${iataAirline}${flightNum} to ${arrLoc.name}. We are completing our final checks, arrival scheduled at ${arrTime}. Sit back and enjoy the flight."`,
+            it: `"Signore e signori, vi parla il comandante ${captainName}. Benvenuti a bordo del volo ${airlineName} ${iataAirline}${flightNum} diretto a ${arrLoc.name}. Completiamo i controlli finali, arrivo previsto alle ${arrTime}. Buon volo."`
           },
           {
             category: "CREW", badge: "COMANDANTE ➔ CABIN CREW", channel: "INTERPHONE",
@@ -448,19 +460,19 @@
             it: `"Equipaggio di cabina, imbarco completato. Porte in automatico, armare gli scivoli e controllo incrociato."`
           },
           {
-            category: "PILOT-ATC", badge: `PILOTA (${radioCallsign})`, channel: `VHF ${dep.ground}`,
-            en: `"${dep.ground}, ${radioCallsign}, information Bravo, ready for delivery to ${arr.city}."`,
-            it: `"${dep.ground}, ${radioCallsign}, informazione Bravo, pronti per l'autorizzazione di rotta per ${arr.city}."`
+            category: "PILOT-ATC", badge: `PILOTA (${radioCallsign})`, channel: "VHF DELIVERY",
+            en: `"Delivery, ${radioCallsign}, information Bravo, ready for delivery to ${arrLoc.name}."`,
+            it: `"Delivery, ${radioCallsign}, informazione Bravo, pronti per l'autorizzazione di rotta per ${arrLoc.name}."`
           },
           {
-            category: "ATC", badge: dep.ground.toUpperCase(), channel: "VHF DELIVERY",
-            en: `"${radioCallsign}, ${dep.ground}, cleared to ${arr.city} via ${sidName} departure, runway ${depRwy}, initial climb 4,000 feet, ${qnh.en}, squawk ${squawk}."`,
-            it: `"${radioCallsign}, ${dep.ground}, autorizzato a ${arr.city} via partenza ${sidName}, pista ${depRwy}, salita iniziale 4.000 piedi, ${qnh.it}, squawk ${squawk}."`
+            category: "ATC", badge: "DELIVERY", channel: "VHF DELIVERY",
+            en: `"${radioCallsign}, Delivery, cleared to ${arrLoc.name} via ${sidName} departure, runway ${depRwy}, initial climb 4,000 feet, ${qnh.en}, squawk ${squawk}."`,
+            it: `"${radioCallsign}, Delivery, autorizzato a ${arrLoc.name} via partenza ${sidName}, pista ${depRwy}, salita iniziale 4.000 piedi, ${qnh.it}, squawk ${squawk}."`
           },
           {
             category: "PILOT-ATC", badge: `PILOTA (${radioCallsign}) — READBACK`, channel: "VHF DELIVERY",
-            en: `"Cleared to ${arr.city} via ${sidName} departure, runway ${depRwy}, initial climb 4,000 feet, ${qnh.en}, squawk ${squawk}, ${radioCallsign}."`,
-            it: `"Autorizzato a ${arr.city} via partenza ${sidName}, pista ${depRwy}, salita iniziale 4.000 piedi, ${qnh.it}, squawk ${squawk}, ${radioCallsign}."`
+            en: `"Cleared to ${arrLoc.name} via ${sidName} departure, runway ${depRwy}, initial climb 4,000 feet, ${qnh.en}, squawk ${squawk}, ${radioCallsign}."`,
+            it: `"Autorizzato a ${arrLoc.name} via partenza ${sidName}, pista ${depRwy}, salita iniziale 4.000 piedi, ${qnh.it}, squawk ${squawk}, ${radioCallsign}."`
           }
         ]
       },
@@ -474,14 +486,14 @@
             it: `"Equipaggio di cabina, prendere posto per il decollo."`
           },
           {
-            category: "PILOT-ATC", badge: `PILOTA (${radioCallsign})`, channel: `VHF ${dep.tower}`,
-            en: `"${dep.tower}, ${radioCallsign}, holding short runway ${depRwy}, ready for departure."`,
-            it: `"${dep.tower}, ${radioCallsign}, al punto attesa pista ${depRwy}, pronti al decollo."`
+            category: "PILOT-ATC", badge: `PILOTA (${radioCallsign})`, channel: "VHF TOWER",
+            en: `"Tower, ${radioCallsign}, holding short runway ${depRwy}, ready for departure."`,
+            it: `"Torre, ${radioCallsign}, al punto attesa pista ${depRwy}, pronti al decollo."`
           },
           {
-            category: "ATC", badge: dep.tower.toUpperCase(), channel: "VHF TOWER",
-            en: `"${radioCallsign}, ${dep.tower}, wind 040 at 10 knots, runway ${depRwy}, cleared for takeoff."`,
-            it: `"${radioCallsign}, ${dep.tower}, vento 040 a 10 nodi, pista ${depRwy}, autorizzato al decollo."`
+            category: "ATC", badge: "TOWER", channel: "VHF TOWER",
+            en: `"${radioCallsign}, Tower, wind 040 at 10 knots, runway ${depRwy}, cleared for takeoff."`,
+            it: `"${radioCallsign}, Torre, vento 040 a 10 nodi, pista ${depRwy}, autorizzato al decollo."`
           },
           {
             category: "PILOT-ATC", badge: `PILOTA (${radioCallsign}) — READBACK`, channel: "VHF TOWER",
@@ -495,9 +507,9 @@
         time: addMinutes(arrTime, -25),
         comms: [
           {
-            category: "ATC", badge: `${arr.city.toUpperCase()} CENTER`, channel: "VHF RADAR",
-            en: `"${radioCallsign}, ${arr.city} Center, descend to Flight Level 120, expect ILS approach runway ${arrRwy}."`,
-            it: `"${radioCallsign}, Centro di ${arr.city}, scendete a Livello di Volo 120, aspettatevi avvicinamento ILS pista ${arrRwy}."`
+            category: "ATC", badge: "CENTER", channel: "VHF RADAR",
+            en: `"${radioCallsign}, Center, descend to Flight Level 120, expect ILS approach runway ${arrRwy}."`,
+            it: `"${radioCallsign}, Centro, scendete a Livello di Volo 120, aspettatevi avvicinamento ILS pista ${arrRwy}."`
           },
           {
             category: "PILOT-ATC", badge: `PILOTA (${radioCallsign}) — READBACK`, channel: "VHF RADAR",
@@ -506,8 +518,8 @@
           },
           {
             category: "PA", badge: "COMANDANTE ➔ PASSEGGERI", channel: "CABIN PA",
-            en: `"Ladies and gentlemen, captain speaking. We have begun our descent into ${arr.city}. Weather is fine, temperature 24°C. Please fasten your seatbelts."`,
-            it: `"Signore e signori, vi parla il comandante. Abbiamo iniziato la discesa su ${arr.city}. Meteo buono, temperatura 24°C. Vi preghiamo di allacciare le cinture."`
+            en: `"Ladies and gentlemen, captain speaking. We have begun our descent into ${arrLoc.name}. Weather is fine, temperature 24°C. Please fasten your seatbelts."`,
+            it: `"Signore e signori, vi parla il comandante. Abbiamo iniziato la discesa su ${arrLoc.name}. Meteo buono, temperatura 24°C. Vi preghiamo di allacciare le cinture."`
           }
         ]
       },
@@ -521,14 +533,14 @@
             it: `"Equipaggio di cabina, prepararsi all'atterraggio."`
           },
           {
-            category: "PILOT-ATC", badge: `PILOTA (${radioCallsign})`, channel: `VHF ${arr.tower}`,
-            en: `"${arr.tower}, ${radioCallsign}, established ILS runway ${arrRwy}, four miles out."`,
-            it: `"${arr.tower}, ${radioCallsign}, stabilizzati sull'ILS pista ${arrRwy}, a quattro miglia."`
+            category: "PILOT-ATC", badge: `PILOTA (${radioCallsign})`, channel: "VHF TOWER",
+            en: `"Tower, ${radioCallsign}, established ILS runway ${arrRwy}, four miles out."`,
+            it: `"Torre, ${radioCallsign}, stabilizzati sull'ILS pista ${arrRwy}, a quattro miglia."`
           },
           {
-            category: "ATC", badge: arr.tower.toUpperCase(), channel: "VHF TOWER",
-            en: `"${radioCallsign}, ${arr.tower}, wind 110 at 12, runway ${arrRwy}, cleared to land."`,
-            it: `"${radioCallsign}, ${arr.tower}, vento 110 a 12, pista ${arrRwy}, autorizzato all'atterraggio."`
+            category: "ATC", badge: "TOWER", channel: "VHF TOWER",
+            en: `"${radioCallsign}, Tower, wind 110 at 12, runway ${arrRwy}, cleared to land."`,
+            it: `"${radioCallsign}, Torre, vento 110 a 12, pista ${arrRwy}, autorizzato all'atterraggio."`
           },
           {
             category: "PILOT-ATC", badge: `PILOTA (${radioCallsign}) — READBACK`, channel: "VHF TOWER",
@@ -542,14 +554,14 @@
         time: addMinutes(arrTime, 8),
         comms: [
           {
-            category: "ATC", badge: arr.tower.toUpperCase(), channel: "VHF TOWER",
+            category: "ATC", badge: "TOWER", channel: "VHF TOWER",
             en: `"${radioCallsign}, vacate left via Bravo, contact Ground 121.8. Welcome."`,
             it: `"${radioCallsign}, liberate a sinistra via Bravo, contattate Ground su 121.8. Benvenuti."`
           },
           {
             category: "PA", badge: "COMANDANTE ➔ PASSEGGERI", channel: "CABIN PA",
-            en: `"Ladies and gentlemen, welcome to ${arr.city}. Please remain seated until the aircraft is parked at the gate. Thank you for flying with ${airlineName}."`,
-            it: `"Signore e signori, benvenuti a ${arr.city}. Siete pregati di rimanere seduti fino al parcheggio al gate. Grazie per aver volato con ${airlineName}."`
+            en: `"Ladies and gentlemen, welcome to ${arrLoc.name}. Please remain seated until the aircraft is parked at the gate. Thank you for flying with ${airlineName}."`,
+            it: `"Signore e signori, benvenuti a ${arrLoc.name}. Siete pregati di rimanere seduti fino al parcheggio al gate. Grazie per aver volato con ${airlineName}."`
           },
           {
             category: "CREW", badge: "COMANDANTE ➔ CABIN CREW", channel: "INTERPHONE",
@@ -588,7 +600,7 @@
     document.getElementById("glossaryBox").innerHTML = `
       <h3>📖 Note di Fraseologia Reale</h3>
       <div class="glossary-grid">
-        <div class="glossary-item"><strong>Readback Obbligatorio:</strong> <span>Il pilota ripete integralmente ogni autorizzazione critica (quota, pista, squawk, SID) per sicurezza ed conformità alle norme ICAO.</span></div>
+        <div class="glossary-item"><strong>Readback Obbligatorio:</strong> <span>Il pilota ripete integralmente ogni autorizzazione critica (quota, pista, squawk, SID) per sicurezza e conformità alle norme ICAO.</span></div>
         <div class="glossary-item"><strong>SID (${sidName}):</strong> <span>Procedura di salita iniziale pubblicata per il rispetto dei sorvoli e dei rilievi.</span></div>
       </div>
     `;
