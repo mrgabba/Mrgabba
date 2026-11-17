@@ -44,6 +44,7 @@
       margin-bottom: 24px;
       flex-wrap: wrap;
       gap: 12px;
+      position: relative;
     }
 
     .brand { display: flex; align-items: center; gap: 12px; }
@@ -60,6 +61,18 @@
 
     h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: 0.5px; }
     .subtitle { font-size: 0.85rem; color: var(--text-muted); }
+
+    /* Badge Versione in alto a destra */
+    .version-badge {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid var(--border-color);
+      color: var(--accent-blue);
+      padding: 4px 8px;
+      border-radius: 6px;
+      letter-spacing: 0.5px;
+    }
 
     .grid-layout {
       display: grid;
@@ -223,6 +236,7 @@
         <div class="subtitle">Simulatore fraseologia con Readback Rigoroso e Mappa Dinamica</div>
       </div>
     </div>
+    <div class="version-badge">v5.0</div>
   </header>
 
   <div class="grid-layout">
@@ -325,9 +339,7 @@
   let currentVariantSeed = 0;
   let mapInstance = null;
 
-  // Funzione asincrona che interroga Nominatim (OpenStreetMap) per trovare coordinate reali di qualsiasi città/aeroporto inserito
   async function getCoords(query) {
-    // Pulisce la stringa rimuovendo codici ICAO iniziali se presenti (es. "LIRQ - Firenze" diventa "Firenze")
     const cleanQuery = query.replace(/^[A-Z]{4}\s*-\s*/, "").trim();
     try {
       const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanQuery + " airport")}&limit=1`);
@@ -335,7 +347,6 @@
       if (data && data.length > 0) {
         return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), name: cleanQuery };
       }
-      // Secondo tentativo senza la parola "airport" se non trova nulla
       const response2 = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanQuery)}&limit=1`);
       const data2 = await response2.json();
       if (data2 && data2.length > 0) {
@@ -344,7 +355,6 @@
     } catch (e) {
       console.error("Geocoding error:", e);
     }
-    // Coordinate di fallback (Roma) se la rete o il servizio falliscono
     return { lat: 41.8, lon: 12.2, name: cleanQuery };
   }
 
@@ -412,13 +422,11 @@
     const originInput = document.getElementById("origin").value;
     const destInput = document.getElementById("destination").value;
 
-    // Estrae eventuali codici ICAO scritti all'inizio (es. LIRQ)
     const depCodeMatch = originInput.match(/^([A-Z]{4})/);
     const arrCodeMatch = destInput.match(/^([A-Z]{4})/);
     const depCode = depCodeMatch ? depCodeMatch[1] : "DEP";
     const arrCode = arrCodeMatch ? arrCodeMatch[1] : "ARR";
 
-    // Ricerca asincrona delle coordinate basata su ciò che l'utente ha scritto nei campi
     const depLoc = await getCoords(originInput);
     const arrLoc = await getCoords(destInput);
 
