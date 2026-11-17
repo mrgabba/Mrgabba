@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ATC & Flight Deck Script Generator</title>
-  <!-- Leaflet CSS per la mappa interattiva -->
+  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   <style>
     :root {
@@ -157,7 +157,6 @@
     }
     .strip-item span { color: var(--text-muted); display: block; font-size: 0.7rem; }
 
-    /* Mappa visibile e dimensionata correttamente */
     #mapContainer {
       width: 100%;
       height: 320px;
@@ -257,7 +256,7 @@
       <div class="row-2">
         <div class="form-group">
           <label for="captainName">Nome Comandante</label>
-          <input type="text" id="captainName" value="Marco Rossi" />
+          <input type="text" id="captainName" value="Andrea Gabbanini" />
         </div>
         <div class="form-group">
           <label for="aircraft">Aeromobile</label>
@@ -375,8 +374,8 @@
 
     if (!mapInstance) {
       mapInstance = L.map('mapContainer', { zoomControl: true }).setView(depLatLng, 6);
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap & CartoDB',
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         maxZoom: 19
       }).addTo(mapInstance);
     } else {
@@ -389,8 +388,8 @@
     L.marker(arrLatLng).addTo(mapInstance).bindPopup(`<b>Arrivo:</b> ${arr.code} - ${arr.city}`);
 
     const routeLine = L.polyline([depLatLng, arrLatLng], {
-      color: '#38bdf8',
-      weight: 3,
+      color: '#0284c7',
+      weight: 4,
       dashArray: '6, 6'
     }).addTo(mapInstance);
 
@@ -406,7 +405,7 @@
     const radioCallsignMap = { "ITY": "ITArrow", "AAL": "American", "DLH": "Lufthansa", "BAW": "Speedbird", "AFR": "Airfrans" };
     
     const flightNum = document.getElementById("flightNum").value.trim() || "1658";
-    const captainName = document.getElementById("captainName").value.trim() || "Marco Rossi";
+    const captainName = document.getElementById("captainName").value.trim() || "Andrea Gabbanini";
     const radioCallsign = `${radioCallsignMap[icaoAirline] || airlineName} ${flightNum}`;
 
     const dep = parseAirportInput(document.getElementById("origin").value);
@@ -423,7 +422,6 @@
     const isFlorence = dep.code === "LIRQ";
     const sidName = isFlorence ? "KUGIX 5A" : `${dep.code} 1D`;
 
-    // Aggiorna e mostra la mappa
     updateMap(dep, arr);
 
     document.getElementById("flightStrip").innerHTML = `
@@ -596,7 +594,6 @@
     `;
   }
 
-  // Genera automaticamente la mappa e il primo script all'avvio della pagina
   window.onload = () => generateScript(false);
 </script>
 
