@@ -157,14 +157,14 @@
     }
     .strip-item span { color: var(--text-muted); display: block; font-size: 0.7rem; }
 
-    /* Mappa */
+    /* Mappa visibile e dimensionata correttamente */
     #mapContainer {
       width: 100%;
-      height: 280px;
+      height: 320px;
       border-radius: 10px;
       border: 1px solid var(--border-color);
       margin-bottom: 20px;
-      display: none;
+      display: block;
       z-index: 1;
     }
 
@@ -345,7 +345,6 @@
     let code = match ? match[1].toUpperCase() : (clean.length === 4 ? clean.toUpperCase() : "ZZZZ");
     let name = match ? match[2].trim() : clean;
     if (airportDB[code]) return { code, ...airportDB[code] };
-    // Fallback con coordinate stimate o medie in caso di inserimento libero
     return { code, city: name, lat: 43.0, lon: 12.0, tower: `${name} Tower`, ground: `${name} Delivery`, runways: ["09", "27"], region: "EU" };
   }
 
@@ -360,7 +359,7 @@
   }
 
   function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 3440.065; // Raggio della Terra in Miglia Nautiche (NM)
+    const R = 3440.065;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
@@ -371,26 +370,23 @@
   }
 
   function updateMap(dep, arr) {
-    const mapContainer = document.getElementById("mapContainer");
-    mapContainer.style.display = "block";
+    const depLatLng = [dep.lat, dep.lon];
+    const arrLatLng = [arr.lat, arr.lon];
 
     if (!mapInstance) {
-      mapInstance = L.map('mapContainer', { zoomControl: false }).setView([42.5, 12.5], 5);
+      mapInstance = L.map('mapContainer', { zoomControl: true }).setView(depLatLng, 6);
       L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap & CartoDB',
         maxZoom: 19
       }).addTo(mapInstance);
     } else {
       mapInstance.eachLayer((layer) => {
-        if (!layer._url) mapInstance.removeLayer(layer); // Rimuove marker e linee precedenti
+        if (!layer._url) mapInstance.removeLayer(layer);
       });
     }
 
-    const depLatLng = [dep.lat, dep.lon];
-    const arrLatLng = [arr.lat, arr.lon];
-
-    const depMarker = L.marker(depLatLng).addTo(mapInstance).bindPopup(`<b>Partenza:</b> ${dep.code} - ${dep.city}`);
-    const arrMarker = L.marker(arrLatLng).addTo(mapInstance).bindPopup(`<b>Arrivo:</b> ${arr.code} - ${arr.city}`);
+    L.marker(depLatLng).addTo(mapInstance).bindPopup(`<b>Partenza:</b> ${dep.code} - ${dep.city}`);
+    L.marker(arrLatLng).addTo(mapInstance).bindPopup(`<b>Arrivo:</b> ${arr.code} - ${arr.city}`);
 
     const routeLine = L.polyline([depLatLng, arrLatLng], {
       color: '#38bdf8',
@@ -398,8 +394,8 @@
       dashArray: '6, 6'
     }).addTo(mapInstance);
 
-    mapInstance.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
-    setTimeout(() => mapInstance.invalidateSize(), 200);
+    mapInstance.invalidateSize();
+    mapInstance.fitBounds(routeLine.getBounds(), { padding: [60, 60] });
   }
 
   function generateScript(randomize = false) {
@@ -410,7 +406,7 @@
     const radioCallsignMap = { "ITY": "ITArrow", "AAL": "American", "DLH": "Lufthansa", "BAW": "Speedbird", "AFR": "Airfrans" };
     
     const flightNum = document.getElementById("flightNum").value.trim() || "1658";
-    const captainName = document.getElementById("captainName").value.trim() || "Comandante";
+    const captainName = document.getElementById("captainName").value.trim() || "Marco Rossi";
     const radioCallsign = `${radioCallsignMap[icaoAirline] || airlineName} ${flightNum}`;
 
     const dep = parseAirportInput(document.getElementById("origin").value);
@@ -427,7 +423,7 @@
     const isFlorence = dep.code === "LIRQ";
     const sidName = isFlorence ? "KUGIX 5A" : `${dep.code} 1D`;
 
-    // Aggiorna la mappa visiva della tratta
+    // Aggiorna e mostra la mappa
     updateMap(dep, arr);
 
     document.getElementById("flightStrip").innerHTML = `
@@ -600,6 +596,7 @@
     `;
   }
 
+  // Genera automaticamente la mappa e il primo script all'avvio della pagina
   window.onload = () => generateScript(false);
 </script>
 
