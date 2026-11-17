@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ATC & Flight Deck Script Generator</title>
+  <!-- Leaflet CSS per la mappa interattiva -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   <style>
     :root {
       --bg-primary: #0b0f19;
@@ -155,6 +157,17 @@
     }
     .strip-item span { color: var(--text-muted); display: block; font-size: 0.7rem; }
 
+    /* Mappa */
+    #mapContainer {
+      width: 100%;
+      height: 280px;
+      border-radius: 10px;
+      border: 1px solid var(--border-color);
+      margin-bottom: 20px;
+      display: none;
+      z-index: 1;
+    }
+
     .phase-block {
       margin-bottom: 24px;
       border: 1px solid var(--border-color);
@@ -208,7 +221,7 @@
       <div class="brand-icon">VHF // PA</div>
       <div>
         <h1>Flight Deck & ATC Script Generator</h1>
-        <div class="subtitle">Simulatore fraseologia con Readback Rigoroso e SID</div>
+        <div class="subtitle">Simulatore fraseologia con Readback Rigoroso e Mappa della Tratta</div>
       </div>
     </div>
   </header>
@@ -253,12 +266,12 @@
       </div>
 
       <div class="form-group">
-        <label for="origin">Aeroporto di Partenza (ICAO - Città)</label>
+        <label for="origin">Aeroporto Partenza (ICAO - Città)</label>
         <input type="text" id="origin" value="LIRQ - Firenze Peretola" />
       </div>
 
       <div class="form-group">
-        <label for="destination">Aeroporto di Arrivo (ICAO - Città)</label>
+        <label for="destination">Aeroporto Arrivo (ICAO - Città)</label>
         <input type="text" id="destination" value="LIRF - Roma Fiumicino" />
       </div>
 
@@ -293,36 +306,47 @@
       </div>
 
       <div class="btn-group">
-        <button class="btn-primary" onclick="generateScript(false)">✈️ Genera Copione</button>
+        <button class="btn-primary" onclick="generateScript(false)">✈️ Genera Copione & Mappa</button>
         <button class="btn-secondary" onclick="generateScript(true)">🎲 Nuova Variante</button>
       </div>
     </aside>
 
     <main>
       <div class="flight-strip" id="flightStrip"></div>
+      <div id="mapContainer"></div>
       <div id="scriptOutput"></div>
       <div class="glossary-box" id="glossaryBox"></div>
     </main>
   </div>
 </div>
 
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>
   const airportDB = {
-    "LIRQ": { city: "Firenze Peretola", tower: "Firenze Tower", ground: "Firenze Delivery", runways: ["05", "23"], region: "EU" },
-    "LIRF": { city: "Roma Fiumicino", tower: "Roma Tower", ground: "Roma Ground", runways: ["16R", "25", "16L"], region: "EU" },
-    "LIMC": { city: "Milano Malpensa", tower: "Malpensa Tower", ground: "Malpensa Ground", runways: ["35R", "35L"], region: "EU" },
-    "KMIA": { city: "Miami", tower: "Miami Tower", ground: "Miami Ground", runways: ["09", "08R", "27", "30"], region: "US" },
-    "KJFK": { city: "New York JFK", tower: "Kennedy Tower", ground: "Kennedy Ground", runways: ["31L", "22L", "04R"], region: "US" }
+    "LIRQ": { city: "Firenze Peretola", lat: 43.8099, lon: 11.2051, tower: "Firenze Tower", ground: "Firenze Delivery", runways: ["05", "23"], region: "EU" },
+    "LIRF": { city: "Roma Fiumicino", lat: 41.8003, lon: 12.2389, tower: "Roma Tower", ground: "Roma Ground", runways: ["16R", "25", "16L"], region: "EU" },
+    "LIMC": { city: "Milano Malpensa", lat: 45.6306, lon: 8.7281, tower: "Malpensa Tower", ground: "Malpensa Ground", runways: ["35R", "35L"], region: "EU" },
+    "LIML": { city: "Milano Linate", lat: 45.4451, lon: 9.2767, tower: "Linate Tower", ground: "Linate Ground", runways: ["36", "18"], region: "EU" },
+    "LIPZ": { city: "Venezia Marco Polo", lat: 45.5053, lon: 12.3519, tower: "Venezia Tower", ground: "Venezia Ground", runways: ["04R", "22L"], region: "EU" },
+    "KMIA": { city: "Miami", lat: 25.7959, lon: -80.2870, tower: "Miami Tower", ground: "Miami Ground", runways: ["09", "08R"], region: "US" },
+    "KJFK": { city: "New York JFK", lat: 40.6413, lon: -73.7781, tower: "Kennedy Tower", ground: "Kennedy Ground", runways: ["31L", "22L"], region: "US" },
+    "EGLL": { city: "London Heathrow", lat: 51.4700, lon: -0.4543, tower: "Heathrow Tower", ground: "Heathrow Ground", runways: ["27L", "27R"], region: "EU" },
+    "LFPG": { city: "Paris CDG", lat: 49.0097, lon: 2.5479, tower: "De Gaulle Tower", ground: "De Gaulle Ground", runways: ["26R", "27L"], region: "EU" },
+    "OMDB": { city: "Dubai", lat: 25.2532, lon: 55.3657, tower: "Dubai Tower", ground: "Dubai Ground", runways: ["30R", "12L"], region: "EU" }
   };
 
   let currentVariantSeed = 0;
+  let mapInstance = null;
 
   function parseAirportInput(rawInput) {
     const clean = rawInput.trim();
     const match = clean.match(/^([A-Z]{4})\s*-\s*(.+)$/i);
     let code = match ? match[1].toUpperCase() : (clean.length === 4 ? clean.toUpperCase() : "ZZZZ");
     let name = match ? match[2].trim() : clean;
-    return airportDB[code] ? { code, ...airportDB[code] } : { code, city: name, tower: `${name} Tower`, ground: `${name} Delivery`, runways: ["09", "27"], region: code.startsWith("K") ? "US" : "EU" };
+    if (airportDB[code]) return { code, ...airportDB[code] };
+    // Fallback con coordinate stimate o medie in caso di inserimento libero
+    return { code, city: name, lat: 43.0, lon: 12.0, tower: `${name} Tower`, ground: `${name} Delivery`, runways: ["09", "27"], region: "EU" };
   }
 
   function addMinutes(timeStr, mins) {
@@ -333,6 +357,49 @@
 
   function formatQNH(region) {
     return region === "US" ? { en: `altimeter 29.92`, it: `altimetro 29.92 inHg` } : { en: `QNH 1013`, it: `QNH 1013 hPa` };
+  }
+
+  function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 3440.065; // Raggio della Terra in Miglia Nautiche (NM)
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return Math.round(R * c);
+  }
+
+  function updateMap(dep, arr) {
+    const mapContainer = document.getElementById("mapContainer");
+    mapContainer.style.display = "block";
+
+    if (!mapInstance) {
+      mapInstance = L.map('mapContainer', { zoomControl: false }).setView([42.5, 12.5], 5);
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap & CartoDB',
+        maxZoom: 19
+      }).addTo(mapInstance);
+    } else {
+      mapInstance.eachLayer((layer) => {
+        if (!layer._url) mapInstance.removeLayer(layer); // Rimuove marker e linee precedenti
+      });
+    }
+
+    const depLatLng = [dep.lat, dep.lon];
+    const arrLatLng = [arr.lat, arr.lon];
+
+    const depMarker = L.marker(depLatLng).addTo(mapInstance).bindPopup(`<b>Partenza:</b> ${dep.code} - ${dep.city}`);
+    const arrMarker = L.marker(arrLatLng).addTo(mapInstance).bindPopup(`<b>Arrivo:</b> ${arr.code} - ${arr.city}`);
+
+    const routeLine = L.polyline([depLatLng, arrLatLng], {
+      color: '#38bdf8',
+      weight: 3,
+      dashArray: '6, 6'
+    }).addTo(mapInstance);
+
+    mapInstance.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
+    setTimeout(() => mapInstance.invalidateSize(), 200);
   }
 
   function generateScript(randomize = false) {
@@ -355,14 +422,18 @@
     const arrRwy = arr.runways[(currentVariantSeed + 1) % arr.runways.length];
     const squawk = 4210 + (currentVariantSeed * 17) % 3500;
     const qnh = formatQNH(dep.region);
+    const distanceNM = calculateDistance(dep.lat, dep.lon, arr.lat, arr.lon);
 
     const isFlorence = dep.code === "LIRQ";
     const sidName = isFlorence ? "KUGIX 5A" : `${dep.code} 1D`;
 
+    // Aggiorna la mappa visiva della tratta
+    updateMap(dep, arr);
+
     document.getElementById("flightStrip").innerHTML = `
       <div class="strip-item"><span>COMANDANTE</span><strong>Capt. ${captainName}</strong></div>
       <div class="strip-item"><span>VOLO</span><strong>${iataAirline}${flightNum} (${radioCallsign})</strong></div>
-      <div class="strip-item"><span>ROTTA</span><strong>${dep.code} ➔ ${arr.code}</strong></div>
+      <div class="strip-item"><span>TRATTA</span><strong>${dep.code} ➔ ${arr.code} (${distanceNM} NM)</strong></div>
       <div class="strip-item"><span>SID / PISTA</span><strong>${sidName} (RWY ${depRwy})</strong></div>
       <div class="strip-item"><span>SQUAWK</span><strong>${squawk}</strong></div>
     `;
